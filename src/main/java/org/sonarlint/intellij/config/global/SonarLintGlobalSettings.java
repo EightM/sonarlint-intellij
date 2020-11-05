@@ -141,6 +141,18 @@ public final class SonarLintGlobalSettings {
       .collect(Collectors.toList()));
   }
 
+  public void addSonarQubeServer(SonarQubeServer server) {
+    ArrayList<SonarQubeServer> sonarQubeServers = new ArrayList<>(servers);
+    sonarQubeServers.add(server);
+    this.servers = Collections.unmodifiableList(sonarQubeServers);
+  }
+
+  public Set<String> getServerNames() {
+    return servers.stream()
+      .map(SonarQubeServer::getName)
+      .collect(Collectors.toSet());
+  }
+
   public List<String> getFileExclusions() {
     return fileExclusions;
   }

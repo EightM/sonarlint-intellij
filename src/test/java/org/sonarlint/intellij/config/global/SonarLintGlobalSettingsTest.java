@@ -132,4 +132,15 @@ public class SonarLintGlobalSettingsTest extends AbstractSonarLintMockedTests {
     settings.resetRuleParam(RULE, PARAM);
     assertThat(settings.getRuleParamValue(RULE, PARAM)).isEmpty();
   }
+
+  @Test
+  public void testAddServer() {
+    SonarLintGlobalSettings settings = new SonarLintGlobalSettings();
+
+    settings.addSonarQubeServer(SonarQubeServer.newBuilder().setHostUrl("host").setName("name").build());
+
+    assertThat(settings.getSonarQubeServers())
+      .extracting(SonarQubeServer::getHostUrl)
+      .containsOnly("host");
+  }
 }
