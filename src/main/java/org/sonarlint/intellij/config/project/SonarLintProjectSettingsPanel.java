@@ -60,9 +60,10 @@ public class SonarLintProjectSettingsPanel implements Disposable {
     return root;
   }
 
-  public void load(List<SonarQubeServer> servers, SonarLintProjectSettings projectSettings) {
+  public void load(List<SonarQubeServer> servers, SonarLintProjectSettings projectSettings, String projectKeyPrefill) {
     propsPanel.setAnalysisProperties(projectSettings.getAdditionalProperties());
-    bindPanel.load(servers, projectSettings.isBindingEnabled(), projectSettings.getServerId(), projectSettings.getProjectKey());
+    String projectKey = StringUtils.isEmpty(projectKeyPrefill) ? projectSettings.getProjectKey() : projectKeyPrefill;
+    bindPanel.load(servers, projectSettings.isBindingEnabled(), projectSettings.getServerId(), projectKey);
     exclusionsPanel.load(projectSettings);
   }
 

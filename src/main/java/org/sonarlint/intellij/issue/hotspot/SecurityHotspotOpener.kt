@@ -76,7 +76,7 @@ open class SecurityHotspotOpener(private val wsHelper: WsHelper, private val pro
         return Arrays.stream(projectManager.openProjects)
                 .filter {
                     val projectBindingManager = getService(it, ProjectBindingManager::class.java)
-                    projectBindingManager.isBoundTo(serverUrl, projectKey)
+                    projectBindingManager.isBoundTo(projectKey, serverUrl)
                 }
                 .findFirst()
                 .orElse(null)

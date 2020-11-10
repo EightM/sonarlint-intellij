@@ -108,7 +108,12 @@ public class ProjectBindingManager {
     return server.orElseThrow(() -> new InvalidBindingException("SonarQube server configuration does not exist for server id: " + serverId));
   }
 
-  public boolean isBoundTo(String serverUrl, String projectKey) {
+  public boolean isBound() {
+    SonarLintProjectSettings projectSettings = getSettingsFor(myProject);
+    return projectSettings.isBindingEnabled();
+  }
+
+  public boolean isBoundTo(String projectKey, String serverUrl) {
     SonarLintProjectSettings projectSettings = getSettingsFor(myProject);
     String serverId = projectSettings.getServerId();
     List<SonarQubeServer> servers = getGlobalSettings().getSonarQubeServers();

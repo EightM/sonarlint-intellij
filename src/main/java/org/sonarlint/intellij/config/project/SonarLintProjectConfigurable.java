@@ -58,6 +58,7 @@ public class SonarLintProjectConfigurable implements Configurable, Configurable.
   private final MessageBusConnection busConnection;
 
   private SonarLintProjectSettingsPanel panel;
+  private String projectKeyPrefill = "";
 
   public SonarLintProjectConfigurable(Project project) {
     this.project = project;
@@ -70,6 +71,10 @@ public class SonarLintProjectConfigurable implements Configurable, Configurable.
         }
       }
     });
+  }
+
+  public void prefillProjectKey(String projectKey) {
+    projectKeyPrefill = projectKey;
   }
 
   @Nls
@@ -141,7 +146,7 @@ public class SonarLintProjectConfigurable implements Configurable, Configurable.
 
     getServersFromApplicationConfigurable()
       .onProcessed(sonarQubeServers ->
-        panel.load(sonarQubeServers != null ? sonarQubeServers : getGlobalSettings().getSonarQubeServers(), getSettingsFor(project))
+        panel.load(sonarQubeServers != null ? sonarQubeServers : getGlobalSettings().getSonarQubeServers(), getSettingsFor(project), projectKeyPrefill)
       );
   }
 
