@@ -19,85 +19,70 @@
  */
 package org.sonarlint.intellij.server
 
-import com.intellij.ide.IdeBundle
-import com.intellij.ide.actions.OpenProjectFileChooserDescriptor
-import com.intellij.ide.highlighter.ProjectFileType
-import com.intellij.ide.impl.OpenProjectTask
-import com.intellij.ide.impl.ProjectUtil
-import com.intellij.openapi.Disposable
-import com.intellij.openapi.fileChooser.FileChooser
-import com.intellij.openapi.fileChooser.FileChooserDescriptor
-import com.intellij.openapi.fileChooser.impl.FileChooserUtil
-import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
-import com.intellij.openapi.vcs.ProjectLevelVcsManager
-import com.intellij.openapi.vfs.VfsUtil
-import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.platform.PlatformProjectOpenProcessor
-import com.intellij.projectImport.ProjectAttachProcessor
-import com.intellij.projectImport.ProjectOpenProcessor
 import com.intellij.ui.awt.RelativePoint
-import com.intellij.util.ui.cloneDialog.VcsCloneDialog
+import org.jetbrains.concurrency.AsyncPromise
+import org.jetbrains.concurrency.Promise
 import org.sonarlint.intellij.config.Settings
-import org.sonarlint.intellij.config.project.SonarLintProjectConfigurable
-import org.sonarlint.intellij.core.ProjectBindingManager
+import org.sonarlint.intellij.config.global.SonarQubeServer
 import org.sonarlint.intellij.config.global.wizard.NewConnectionWizard
+import org.sonarlint.intellij.core.ProjectBindingManager
 import org.sonarlint.intellij.issue.hotspot.SecurityHotspotOpener
-import org.sonarlint.intellij.issue.hotspot.SecurityHotspotOpeningResult
-import org.sonarlint.intellij.ui.SonarLintRecentProjectPanel
+import org.sonarlint.intellij.ui.SelectProjectPanel
 import org.sonarlint.intellij.util.SonarLintUtils
 import java.awt.Point
-import java.nio.file.Paths
-import javax.swing.JButton
-import javax.swing.JPanel
 
 open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener = SecurityHotspotOpener()) {
 
-    private lateinit var projectKey: String
-    private lateinit var hotspotKey: String
-    private lateinit var serverUrl: String
-
-    open fun open(projectKey: String, hotspotKey: String, serverUrl: String) {
-        this.projectKey = projectKey
-        this.hotspotKey = hotspotKey
-        this.serverUrl = serverUrl
-        do {
-            val result = open()
-            val shouldRetry = handleOpeningResult(result, projectKey, serverUrl)
-        } while (shouldRetry)
+    open fun openNew(projectKey: String, hotspotKey: String, serverUrl: String) {
+        ensureConnectionConfigured(serverUrl)
+                .then { connection ->
+                    ensureProjectIsBound(projectKey, serverUrl)
+                            .then {
+                                opener.open(hotspotKey, it)
+                            }
+                }
     }
 
-    private fun handleOpeningResult(result: SecurityHotspotOpeningResult, projectKey: String, serverUrl: String): Boolean {
-        when (result) {
-            SecurityHotspotOpeningResult.NO_MATCHING_CONNECTION -> {
-                val message = "There is no connection configured to $serverUrl."
-                return Notifier.showYesNoModalWindow(message, "Create connection") {
-                    return@showYesNoModalWindow NewConnectionWizard().open(serverUrl)
-                }
-            }
-            SecurityHotspotOpeningResult.PROJECT_NOT_FOUND -> {
-                selectProject(projectKey, serverUrl)
-                // return Notifier.showProjectNotBoundModalWindow(project, projectKey)
-                return false
-
+    private fun ensureProjectIsBound(projectKey: String, serverUrl: String): Promise<Project> {
+        val project = opener.getProject(projectKey, serverUrl)
+        val projectPromise = AsyncPromise<Project>()
+        val boundProjectPromise = AsyncPromise<Project>()
+        if (project != null) {
+            boundProjectPromise.setResult(project)
+        } else {
+            selectProject(projectPromise)
+            projectPromise.then { selectedProject ->
+                afterProjectIsBound(selectedProject, projectKey, serverUrl)
+                        .then { boundProjectPromise.setResult(it) }
             }
         }
-        return false
+        return boundProjectPromise
     }
 
-    fun open(): SecurityHotspotOpeningResult {
-        return opener.open(projectKey, hotspotKey, serverUrl)
+    private fun ensureConnectionConfigured(serverUrl: String): Promise<SonarQubeServer> {
+        val listOfConnectionsToServer = Settings.getGlobalSettings().getAllConnectionsTo(serverUrl)
+        val promise = AsyncPromise<SonarQubeServer>()
+        if (listOfConnectionsToServer.isEmpty()) {
+            val message = "There is no connection configured to $serverUrl."
+            Notifier.showYesNoModalWindow(message, "Create connection") {
+                promise.setResult(NewConnectionWizard().open(serverUrl))
+            }
+        } else {
+            promise.setResult(listOfConnectionsToServer.first())
+        }
+        return promise
     }
 
-    private fun selectProject(projectKey: String, serverUrl: String) {
-        Notifier.showProjectNotOpenedWindow { ensureProjectIsBound(it, projectKey, serverUrl) }
+    private fun selectProject(projectPromise: AsyncPromise<Project>) {
+        Notifier.showProjectNotOpenedWindow(projectPromise)
     }
 
-    fun ensureProjectIsBound(project: Project, projectKey: String, serverUrl: String) {
+    fun afterProjectIsBound(project: Project, projectKey: String, serverUrl: String): Promise<Project> {
         val projectBindingManager = SonarLintUtils.getService(project, ProjectBindingManager::class.java)
+        val projectPromise = AsyncPromise<Project>()
         if (!projectBindingManager.isBoundTo(projectKey, serverUrl)) {
             val connection = Settings.getGlobalSettings().sonarQubeServers.first { it.hostUrl == serverUrl }
             val bindProject = {
@@ -105,43 +90,29 @@ open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener
                 projectSettings.isBindingEnabled = true
                 projectSettings.serverId = connection.name
                 projectSettings.projectKey = projectKey
-                open()
-                true
+                projectPromise.setResult(project)
             }
             Notifier.showYesNoModalWindow("You are going to bind current project to $serverUrl. Do you agree?", "Yes", bindProject)
-
         } else {
-            open()
+            projectPromise.setResult(project)
         }
+        return projectPromise
     }
 }
 
 object Notifier {
 
-    fun showYesNoModalWindow(message: String, yesText: String, callback: () -> Boolean): Boolean {
+    fun showYesNoModalWindow(message: String, yesText: String, callback: () -> Unit) {
         val result = Messages.showYesNoDialog(null, message, "Couldn't open security hotspot", yesText, "Cancel", Messages.getWarningIcon())
         if (result == Messages.OK) {
-            return callback()
-        }
-        return false
-    }
-
-    fun showProjectNotBoundModalWindow(project: Project, projectKey: String): Boolean {
-        val projectBindingManager = SonarLintUtils.getService(project, ProjectBindingManager::class.java)
-        val bindingButton = if (projectBindingManager.isBound) "Edit binding" else "Create binding"
-        val message = "This project is not bound to the SonarQube server trying to open the hotspot"
-        return showYesNoModalWindow(message, bindingButton) {
-            val configurable = SonarLintProjectConfigurable(project)
-            configurable.prefillProjectKey(projectKey)
-            return@showYesNoModalWindow ShowSettingsUtil.getInstance().editConfigurable(project, configurable)
+            callback()
         }
     }
 
-    fun showProjectNotOpenedWindow(listener: (project: Project) -> Unit) {
+    fun showProjectNotOpenedWindow(projectPromise: AsyncPromise<Project>) {
+        val openProjectPanel = SelectProjectPanel(projectPromise)
 
-        val openProjectPanelNoWrapper = SelectProjectPanel(listener)
-
-        val builder = JBPopupFactory.getInstance().createComponentPopupBuilder(openProjectPanelNoWrapper, openProjectPanelNoWrapper)
+        val builder = JBPopupFactory.getInstance().createComponentPopupBuilder(openProjectPanel, openProjectPanel)
         val popup = builder
                 .setTitle("SL Open Project")
                 .setMovable(true)
@@ -150,112 +121,9 @@ object Notifier {
                 .createPopup()
         popup.show(RelativePoint(Point(300, 300)))
 
-        openProjectPanelNoWrapper.cancelButton.addActionListener {
+        openProjectPanel.cancelButton.addActionListener {
             popup.cancel()
         }
     }
 
-}
-
-class SelectProjectPanel(val onProjectSelected: (project: Project) -> Unit) : JPanel(), Disposable {
-
-    private val recentProjectPanel = SonarLintRecentProjectPanel()
-    private val openProjectButton = JButton("Open Project")
-    private val newProjectFromVcsButton = JButton("New Project from VCS...")
-    val cancelButton = JButton("Cancel")
-
-    init {
-        add(recentProjectPanel)
-        add(openProjectButton)
-        add(newProjectFromVcsButton)
-        add(cancelButton)
-
-        recentProjectPanel.onProjectSelected = onProjectSelected
-
-        openProjectButton.addActionListener {
-            val descriptor: FileChooserDescriptor = OpenProjectFileChooserDescriptor(false)
-
-            FileChooser.chooseFile(descriptor, null, VfsUtil.getUserHomeDir()) { file: VirtualFile ->
-                if (!descriptor.isFileSelectable(file)) {
-                    val message = IdeBundle.message("error.dir.contains.no.project", file.presentableUrl)
-                    Messages.showInfoMessage(null as Project?, message, IdeBundle.message("title.cannot.open.project"))
-                    return@chooseFile
-                }
-                val project = doOpenFile(file) ?: return@chooseFile
-                onProjectSelected(project)
-            }
-        }
-
-        newProjectFromVcsButton.addActionListener {
-            val project = ProjectManager.getInstance().defaultProject
-            val cloneDialog = VcsCloneDialog.Builder(project).forExtension()
-            if (cloneDialog.showAndGet()) {
-                cloneDialog.doClone(ProjectLevelVcsManager.getInstance(project).compositeCheckoutListener)
-            }
-        }
-
-    }
-
-    fun getProject(): Project {
-        val openProjects = ProjectManager.getInstance().openProjects
-        return if (openProjects.isNotEmpty()) openProjects[0]
-        else ProjectManager.getInstance().defaultProject
-
-    }
-
-    override fun dispose() {
-
-    }
-
-}
-
-private fun doOpenFile(file: VirtualFile): Project? {
-    if (file.isDirectory) {
-        val filePath = Paths.get(file.path)
-        val canAttach = ProjectAttachProcessor.canAttachToProject()
-        val openedProject = if (canAttach) {
-            PlatformProjectOpenProcessor.doOpenProject(filePath, withProjectToClose(null))
-        } else {
-            ProjectUtil.openOrImport(file.path, null, false)
-        }
-        FileChooserUtil.setLastOpenedFile(openedProject, file)
-        return openedProject
-    }
-
-    // try to open as a project - unless the file is an .ipr of the current one
-    if (OpenProjectFileChooserDescriptor.isProjectFile(file)) {
-        val answer = shouldOpenNewProject(null, file)
-        if (answer == Messages.CANCEL) return null
-        if (answer == Messages.YES) {
-            val openedProject = ProjectUtil.openOrImport(file.path, null, false)
-            if (openedProject != null) {
-                FileChooserUtil.setLastOpenedFile(openedProject, file)
-            }
-            return openedProject
-        }
-    }
-    return null
-}
-
-private fun shouldOpenNewProject(project: Project?, file: VirtualFile): Int {
-    if (file.fileType is ProjectFileType) {
-        return Messages.YES
-    }
-    val provider = ProjectOpenProcessor.getImportProvider(file) ?: return Messages.CANCEL
-    return askConfirmationForOpeningProject(file, project)
-}
-
-fun askConfirmationForOpeningProject(file: VirtualFile, project: Project?): Int {
-    return Messages.showYesNoCancelDialog(project,
-            IdeBundle.message("message.open.file.is.project", file.name),
-            IdeBundle.message("title.open.project"),
-            IdeBundle.message("message.open.file.is.project.open.as.project"),
-            IdeBundle.message("message.open.file.is.project.open.as.file"),
-            IdeBundle.message("button.cancel"),
-            Messages.getQuestionIcon())
-}
-
-
-fun withProjectToClose(projectToClose: Project?, forceOpenInNewFrame: Boolean = false): OpenProjectTask {
-    return OpenProjectTask(projectToClose = projectToClose, forceOpenInNewFrame = forceOpenInNewFrame)
 }

@@ -49,6 +49,7 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import com.intellij.util.ui.accessibility.AccessibleContextUtil
 import org.jetbrains.annotations.ApiStatus.ScheduledForRemoval
+import org.jetbrains.concurrency.AsyncPromise
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
@@ -82,10 +83,11 @@ import javax.swing.ListSelectionModel
 import javax.swing.ScrollPaneConstants
 import javax.swing.SwingConstants
 import javax.swing.border.LineBorder
+import kotlin.math.max
 
 open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
 
-    lateinit var onProjectSelected: (Project) -> Unit
+    lateinit var projectPromise: AsyncPromise<Project>
     protected val myList: JBList<AnAction>
     private val myPathShortener: UniqueNameBuilder<ReopenProjectAction>
     protected var projectsWithLongPaths: Set<ReopenProjectAction> = HashSet()
@@ -100,7 +102,7 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
         ActionUtil.performActionDumbAwareWithCallbacks(selection, actionEvent, actionEvent.dataContext)
 
         // TODO project is nullable, need to handle this case
-        actionEvent.project?.let { onProjectSelected(it) }
+        actionEvent.project?.let { projectPromise.setResult(it) }
         return selection
     }
 
@@ -110,7 +112,7 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
 
     protected open val isUseGroups: Boolean
         get() = false
-    protected open val preferredScrollableViewportSize: Dimension
+    private val preferredScrollableViewportSize: Dimension
         get() = JBUI.size(250, 400)
 
     protected fun addMouseMotionListener() {
@@ -152,15 +154,15 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
         myList.addMouseListener(mouseAdapter)
     }
 
-    protected open fun createList(recentProjectActions: Array<AnAction>, size: Dimension): JBList<AnAction> {
+    protected fun createList(recentProjectActions: Array<AnAction>, size: Dimension): JBList<AnAction> {
         return (MyList(size, recentProjectActions) as JBList<AnAction>)
     }
 
-    protected open fun createRenderer(pathShortener: UniqueNameBuilder<ReopenProjectAction>?): ListCellRenderer<AnAction>? {
+    protected fun createRenderer(): ListCellRenderer<AnAction>? {
         return RecentProjectItemRenderer() as ListCellRenderer<AnAction>
     }
 
-    protected open fun createTitle(): JPanel? {
+    protected fun createTitle(): JPanel? {
         val title: JPanel = object : JPanel() {
             override fun getPreferredSize(): Dimension {
                 return Dimension(super.getPreferredSize().width, JBUIScale.scale(28))
@@ -218,9 +220,9 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
             return mySize ?: super.getPreferredScrollableViewportSize()
         }
 
-        internal inner class MouseHandler : MouseAdapter() {
+        inner class MouseHandler : MouseAdapter() {
             override fun mouseEntered(e: MouseEvent) {
-                myMousePoint = e?.point
+                myMousePoint = e.point
             }
 
             override fun mouseExited(e: MouseEvent) {
@@ -228,12 +230,12 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
             }
 
             override fun mouseMoved(e: MouseEvent) {
-                myMousePoint = e?.point
+                myMousePoint = e.point
             }
 
             override fun mouseReleased(e: MouseEvent) {
-                val point = e?.point
-                val index = point?.let { locationToIndex(it) } ?: -1
+                val point = e.point
+                val index = locationToIndex(point)
                 if (index == -1 || !getCloseIconRect(index).contains(point)) {
                     return
                 }
@@ -272,46 +274,43 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
             setEmptyText(IdeBundle.message("empty.text.no.project.open.yet"))
             selectionMode = ListSelectionModel.MULTIPLE_INTERVAL_SELECTION
             getAccessibleContext().accessibleName = RECENT_PROJECTS_LABEL
-            val handler: MouseHandler = MouseHandler()
+            val handler = MouseHandler()
             addMouseListener(handler)
             addMouseMotionListener(handler)
         }
     }
 
-    protected inner class RecentProjectItemRenderer() : JPanel(VerticalFlowLayout()), ListCellRenderer<AnAction?> {
-        protected val myName = JLabel()
-        protected val myPath = JLabel()
-        protected var myHovered = false
+    protected inner class RecentProjectItemRenderer : JPanel(VerticalFlowLayout()), ListCellRenderer<AnAction?> {
+        private val myName = JLabel()
+        private val myPath = JLabel()
+        private var myHovered = false
 
         @ScheduledForRemoval(inVersion = "2020.2")
         @Deprecated("use the default constructor ")
-        protected constructor(pathShortener: UniqueNameBuilder<ReopenProjectAction?>?) : this() {
-        }
 
-        protected fun layoutComponents() {
+        private fun layoutComponents() {
             add(myName)
             add(myPath)
         }
 
-        protected fun getListBackground(isSelected: Boolean, hasFocus: Boolean): Color {
+        private fun getListBackground(isSelected: Boolean): Color {
             return UIUtil.getListBackground(isSelected, true)
         }
 
-        protected fun getListForeground(isSelected: Boolean, hasFocus: Boolean): Color {
+        private fun getListForeground(isSelected: Boolean): Color {
             return UIUtil.getListForeground(isSelected, true)
         }
 
         override fun getListCellRendererComponent(list: JList<out AnAction?>, value: AnAction?, index: Int, selected: Boolean, focused: Boolean): Component {
             myHovered = myHoverIndex == index
-            val fore = getListForeground(selected, list.hasFocus())
-            val back = getListBackground(selected, list.hasFocus())
+            val fore = getListForeground(selected)
+            val back = getListBackground(selected)
             myName.foreground = fore
             myPath.foreground = if (selected) fore else UIUtil.getInactiveTextColor()
             background = back
             if (value is ReopenProjectAction) {
-                val item = value
-                myName.text = item.templatePresentation.text
-                myPath.text = getTitle2Text(item, myPath, JBUIScale.scale(40))
+                myName.text = value.templatePresentation.text
+                myPath.text = getTitle2Text(value, myPath, JBUIScale.scale(40))
             } else if (value is ProjectGroupActionGroup) {
                 myName.text = value.group.name
                 myPath.text = ""
@@ -321,7 +320,7 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
             return this
         }
 
-        protected fun getTitle2Text(action: ReopenProjectAction, pathLabel: JComponent, leftOffset: Int): String? {
+        private fun getTitle2Text(action: ReopenProjectAction, pathLabel: JComponent, leftOffset: Int): String? {
             var fullText = action.projectPath
             if (fullText == null || fullText.isEmpty()) return " "
             fullText = FileUtil.getLocationRelativeToUserHome(PathUtil.toSystemDependentName(fullText), false)
@@ -330,7 +329,7 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
                 val maxWidth = this.width - leftOffset - ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE.getWidth().toInt() -
                         JBUIScale.scale(10)
                 if (maxWidth > 0 && fm.stringWidth(fullText) > maxWidth) {
-                    return truncateDescription(fullText, fm, maxWidth, isTutorial(action))
+                    return truncateDescription(fullText, fm, maxWidth)
                 }
             } catch (e: Exception) {
                 LOG.error("Path label font: " + pathLabel.font)
@@ -340,27 +339,8 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
             return fullText
         }
 
-        private fun isTutorial(action: ReopenProjectAction): Boolean {
-            val groups = RecentProjectsManager.getInstance().groups
-            for (group in groups) {
-                if (!group.isTutorials) {
-                    continue
-                }
-                for (project in group.projects) {
-                    if (project.contains(action.projectPath)) return true
-                }
-            }
-            return false
-        }
 
-        private fun truncateDescription(fullText: String?, fm: FontMetrics, maxWidth: Int, isTutorial: Boolean): String {
-            if (isTutorial) {
-                var tutorialTruncated = fullText
-                while (fm.stringWidth(tutorialTruncated) > maxWidth) {
-                    tutorialTruncated = tutorialTruncated!!.substring(0, tutorialTruncated.length - 1)
-                }
-                return "$tutorialTruncated..."
-            }
+        private fun truncateDescription(fullText: String?, fm: FontMetrics, maxWidth: Int): String {
             var left = 1
             var right = 1
             val center = fullText!!.length / 2
@@ -447,8 +427,7 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
             if (myService == null || myService!!.isShutdown) return
             myService!!.schedule({
                 val startTime = System.currentTimeMillis()
-                val pathIsValid: Boolean
-                pathIsValid = try {
+                val pathIsValid  = try {
                     !RecentProjectsManagerBase.isFileSystemPath(path) || isPathAvailable(path)
                 } catch (e: Exception) {
                     false
@@ -461,7 +440,7 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
                     }
                     ApplicationManager.getApplication().invokeLater(myCallback)
                 }
-                scheduleCheck(path, Math.max(MIN_AUTO_UPDATE_MILLIS.toLong(), 10 * (System.currentTimeMillis() - startTime)))
+                scheduleCheck(path, max(MIN_AUTO_UPDATE_MILLIS.toLong(), 10 * (System.currentTimeMillis() - startTime)))
             }, delay, TimeUnit.MILLISECONDS)
         }
 
@@ -517,7 +496,7 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
             }
         }
         myList = createList(recentProjectActions.toArray(AnAction.EMPTY_ARRAY), preferredScrollableViewportSize)
-        myList.cellRenderer = createRenderer(myPathShortener)!!
+        myList.cellRenderer = createRenderer()!!
         object : ClickListener() {
             override fun onClick(event: MouseEvent, clickCount: Int): Boolean {
                 val selectedIndex = myList.selectedIndex
@@ -550,13 +529,12 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
         scroll.border = null
         val list = if (recentProjectActions.isEmpty()) myList else ListWithFilter.wrap(myList, scroll) { o: AnAction ->
             if (o is ReopenProjectAction) {
-                val item = o
                 val home = SystemProperties.getUserHome()
-                var path = item.projectPath
+                var path = o.projectPath
                 if (FileUtil.startsWith(path, home)) {
                     path = path.substring(home.length)
                 }
-                return@wrap item.projectName + " " + path
+                return@wrap o.projectName + " " + path
             } else if (o is ProjectGroupActionGroup) {
                 return@wrap o.group.name
             }

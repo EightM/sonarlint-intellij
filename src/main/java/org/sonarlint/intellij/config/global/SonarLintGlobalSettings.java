@@ -193,10 +193,10 @@ public final class SonarLintGlobalSettings {
     this.excludedRules = excludedRules;
   }
 
-  public boolean hasConnectionTo(String serverUrl) {
+  public List<SonarQubeServer> getAllConnectionsTo(String serverUrl) {
     return servers.stream()
-      .map(SonarQubeServer::getHostUrl)
-      .anyMatch(url -> url.equals(serverUrl));
+            .filter(it -> it.getHostUrl().equals(serverUrl))
+            .collect(Collectors.toList());
   }
 
   public static class Rule {

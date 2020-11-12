@@ -30,9 +30,9 @@ import org.sonarlint.intellij.util.SonarLintUtils
 
 open class NewConnectionWizard {
 
-    fun open(serverUrl: String): Boolean {
+    fun open(serverUrl: String): SonarQubeServer? {
         val globalSettings = Settings.getGlobalSettings()
-        val serverToCreate = SonarQubeServer.newBuilder().setHostUrl(serverUrl).build()
+        val serverToCreate = SonarQubeServer.newBuilder().setHostUrl(serverUrl).setEnableNotifications(true).build()
         val wizard = SQServerWizard(serverToCreate, globalSettings.serverNames)
         if (wizard.showAndGet()) {
             val created = wizard.server
@@ -42,8 +42,8 @@ open class NewConnectionWizard {
             val serverManager = SonarLintUtils.getService(SonarLintEngineManager::class.java)
             val task = ServerUpdateTask(serverManager.getConnectedEngine(created.name), created, emptyMap(), false)
             ProgressManager.getInstance().run(task.asBackground())
-            return true
+            return created
         }
-        return false
+        return null
     }
 }

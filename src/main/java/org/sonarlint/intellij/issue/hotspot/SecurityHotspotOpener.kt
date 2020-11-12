@@ -23,6 +23,7 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import org.sonarlint.intellij.actions.IssuesViewTabOpener
+import org.sonarlint.intellij.config.Settings
 import org.sonarlint.intellij.config.Settings.getGlobalSettings
 import org.sonarlint.intellij.core.ProjectBindingManager
 import org.sonarlint.intellij.core.SecurityHotspotMatcher
@@ -49,13 +50,10 @@ open class SecurityHotspotOpener(private val wsHelper: WsHelper, private val pro
 
     constructor() : this(WsHelperImpl(), ProjectManager.getInstance())
 
-    open fun open(projectKey: String, hotspotKey: String, serverUrl: String): SecurityHotspotOpeningResult {
-        if (!getGlobalSettings().hasConnectionTo(serverUrl))
-            return SecurityHotspotOpeningResult.NO_MATCHING_CONNECTION
+    open fun open(hotspotKey: String, project: Project): SecurityHotspotOpeningResult {
+        val projectSettings = Settings.getSettingsFor(project)
 
-        val project = getProject(projectKey, serverUrl) ?: return SecurityHotspotOpeningResult.PROJECT_NOT_FOUND
-
-        val optionalRemoteHotspot = wsHelper.getHotspot(getConnectedServerConfig(project), GetSecurityHotspotRequestParams(hotspotKey, projectKey))
+        val optionalRemoteHotspot = wsHelper.getHotspot(getConnectedServerConfig(project), GetSecurityHotspotRequestParams(hotspotKey, projectSettings.projectKey))
         if (!optionalRemoteHotspot.isPresent) {
             return SecurityHotspotOpeningResult.HOTSPOT_DETAILS_NOT_FOUND
         }

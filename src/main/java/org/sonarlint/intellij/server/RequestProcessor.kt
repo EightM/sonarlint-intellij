@@ -72,7 +72,7 @@ class RequestProcessor(private val appInfo: ApplicationInfo = ApplicationInfo.ge
         val serverUrl = request.getParameter(SERVER_URL) ?: return missingParameter(SERVER_URL)
 
         ApplicationManager.getApplication().invokeLater {
-            orchestrator.open(projectKey, hotspotKey, serverUrl)
+            orchestrator.openNew(projectKey, hotspotKey, serverUrl)
         }
         return Success()
     }
