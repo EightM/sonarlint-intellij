@@ -73,16 +73,6 @@ open class SecurityHotspotOpener(private val wsHelper: WsHelper, private val pro
         it.resumeWith(Result.success(SecurityHotspotOpeningResult.SUCCESS))
     }
 
-    fun getProject(projectKey: String, serverUrl: String): Project? {
-        return Arrays.stream(projectManager.openProjects)
-                .filter {
-                    val projectBindingManager = getService(it, ProjectBindingManager::class.java)
-                    projectBindingManager.isBoundTo(projectKey, serverUrl)
-                }
-                .findFirst()
-                .orElse(null)
-    }
-
     @Throws(InvalidBindingException::class)
     private fun getConnectedServerConfig(project: Project): ServerConfiguration {
         val bindingManager = getService(project, ProjectBindingManager::class.java)
