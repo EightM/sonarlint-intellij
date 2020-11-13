@@ -18,13 +18,13 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.PlatformProjectOpenProcessor
 import com.intellij.projectImport.ProjectAttachProcessor
 import com.intellij.util.ui.cloneDialog.VcsCloneDialog
-import org.jetbrains.concurrency.AsyncPromise
 import java.nio.file.Paths
 import javax.swing.JButton
 import javax.swing.JPanel
+import kotlin.coroutines.Continuation
 
 
-class SelectProjectPanel(val projectPromise: AsyncPromise<Project>) : JPanel(), Disposable {
+class SelectProjectPanel(private val projectContinuation: Continuation<Project>) : JPanel(), Disposable {
 
     private val recentProjectPanel = SonarLintRecentProjectPanel()
     private val openProjectButton = JButton("Open Project")
@@ -37,7 +37,7 @@ class SelectProjectPanel(val projectPromise: AsyncPromise<Project>) : JPanel(), 
         add(newProjectFromVcsButton)
         add(cancelButton)
 
-        recentProjectPanel.projectPromise = projectPromise
+        recentProjectPanel.projectContinuation = projectContinuation
 
         openProjectButton.addActionListener {
             val descriptor: FileChooserDescriptor = OpenProjectFileChooserDescriptor(false)
@@ -49,7 +49,7 @@ class SelectProjectPanel(val projectPromise: AsyncPromise<Project>) : JPanel(), 
                     return@chooseFile
                 }
                 val project = doOpenFile(file) ?: return@chooseFile
-                projectPromise.setResult(project)
+                projectContinuation.resumeWith(Result.success(project))
             }
         }
 

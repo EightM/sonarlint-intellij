@@ -19,12 +19,14 @@
  */
 package org.sonarlint.intellij.server
 
+import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.awt.RelativePoint
-import org.jetbrains.concurrency.AsyncPromise
-import org.jetbrains.concurrency.Promise
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.sonarlint.intellij.config.Settings
 import org.sonarlint.intellij.config.global.SonarQubeServer
 import org.sonarlint.intellij.config.global.wizard.NewConnectionWizard
@@ -33,96 +35,91 @@ import org.sonarlint.intellij.issue.hotspot.SecurityHotspotOpener
 import org.sonarlint.intellij.ui.SelectProjectPanel
 import org.sonarlint.intellij.util.SonarLintUtils
 import java.awt.Point
+import kotlin.coroutines.suspendCoroutine
 
 open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener = SecurityHotspotOpener()) {
 
     open fun openNew(projectKey: String, hotspotKey: String, serverUrl: String) {
-        ensureConnectionConfigured(serverUrl)
-                .then { connection ->
-                    ensureProjectIsBound(projectKey, serverUrl)
-                            .then {
-                                opener.open(hotspotKey, it)
-                            }
-                }
+        GlobalScope.launch {
+            val connection = ensureConnectionConfigured(serverUrl) ?: return@launch
+            val project = ensureProjectIsBound(projectKey, connection.hostUrl)
+            opener.open(hotspotKey, project)
+        }
     }
 
-    private fun ensureProjectIsBound(projectKey: String, serverUrl: String): Promise<Project> {
+    private suspend fun ensureProjectIsBound(projectKey: String, serverUrl: String): Project = suspendCoroutine { continuation ->
         val project = opener.getProject(projectKey, serverUrl)
-        val projectPromise = AsyncPromise<Project>()
-        val boundProjectPromise = AsyncPromise<Project>()
         if (project != null) {
-            boundProjectPromise.setResult(project)
+            // TODO better to return here
+            continuation.resumeWith(Result.success(project))
         } else {
-            selectProject(projectPromise)
-            projectPromise.then { selectedProject ->
-                afterProjectIsBound(selectedProject, projectKey, serverUrl)
-                        .then { boundProjectPromise.setResult(it) }
+            // TODO and use suspend here
+            runBlocking {
+                val selectedProject = Notifier.showProjectNotOpenedWindow()
+                val shouldContinue = afterProjectIsBound(selectedProject, projectKey, serverUrl)
+                if (shouldContinue == Messages.OK) continuation.resumeWith(Result.success(selectedProject))
             }
         }
-        return boundProjectPromise
     }
+}
 
-    private fun ensureConnectionConfigured(serverUrl: String): Promise<SonarQubeServer> {
-        val listOfConnectionsToServer = Settings.getGlobalSettings().getAllConnectionsTo(serverUrl)
-        val promise = AsyncPromise<SonarQubeServer>()
-        if (listOfConnectionsToServer.isEmpty()) {
-            val message = "There is no connection configured to $serverUrl."
-            Notifier.showYesNoModalWindow(message, "Create connection") {
-                promise.setResult(NewConnectionWizard().open(serverUrl))
+private suspend fun ensureConnectionConfigured(serverUrl: String): SonarQubeServer? = suspendCoroutine {
+    val listOfConnectionsToServer = Settings.getGlobalSettings().getAllConnectionsTo(serverUrl)
+    if (listOfConnectionsToServer.isEmpty()) {
+        val message = "There is no connection configured to $serverUrl."
+        runInEdt {
+            val result = Notifier.showYesNoModalWindow(message, "Create connection")
+            if (result == Messages.OK) {
+                val server = NewConnectionWizard().open(serverUrl)
+                it.resumeWith(Result.success(server))
             }
-        } else {
-            promise.setResult(listOfConnectionsToServer.first())
         }
-        return promise
+    } else {
+        it.resumeWith(Result.success(listOfConnectionsToServer.first()))
     }
+}
 
-    private fun selectProject(projectPromise: AsyncPromise<Project>) {
-        Notifier.showProjectNotOpenedWindow(projectPromise)
-    }
 
-    fun afterProjectIsBound(project: Project, projectKey: String, serverUrl: String): Promise<Project> {
-        val projectBindingManager = SonarLintUtils.getService(project, ProjectBindingManager::class.java)
-        val projectPromise = AsyncPromise<Project>()
-        if (!projectBindingManager.isBoundTo(projectKey, serverUrl)) {
-            val connection = Settings.getGlobalSettings().sonarQubeServers.first { it.hostUrl == serverUrl }
-            val bindProject = {
+suspend fun afterProjectIsBound(project: Project, projectKey: String, serverUrl: String): Int = suspendCoroutine {
+    val projectBindingManager = SonarLintUtils.getService(project, ProjectBindingManager::class.java)
+
+    if (!projectBindingManager.isBoundTo(projectKey, serverUrl)) {
+        val connection = Settings.getGlobalSettings().sonarQubeServers.first { it.hostUrl == serverUrl }
+        runInEdt {
+            val result = Notifier.showYesNoModalWindow("You are going to bind current project to $serverUrl. Do you agree?", "Yes")
+            if (result == Messages.OK) {
                 val projectSettings = Settings.getSettingsFor(project)
                 projectSettings.isBindingEnabled = true
                 projectSettings.serverId = connection.name
                 projectSettings.projectKey = projectKey
-                projectPromise.setResult(project)
             }
-            Notifier.showYesNoModalWindow("You are going to bind current project to $serverUrl. Do you agree?", "Yes", bindProject)
-        } else {
-            projectPromise.setResult(project)
+            it.resumeWith(Result.success(result))
         }
-        return projectPromise
     }
 }
 
 object Notifier {
 
-    fun showYesNoModalWindow(message: String, yesText: String, callback: () -> Unit) {
-        val result = Messages.showYesNoDialog(null, message, "Couldn't open security hotspot", yesText, "Cancel", Messages.getWarningIcon())
-        if (result == Messages.OK) {
-            callback()
-        }
+    fun showYesNoModalWindow(message: String, yesText: String): Int {
+        return Messages.showYesNoDialog(null, message, "Couldn't open security hotspot", yesText, "Cancel", Messages.getWarningIcon())
     }
 
-    fun showProjectNotOpenedWindow(projectPromise: AsyncPromise<Project>) {
-        val openProjectPanel = SelectProjectPanel(projectPromise)
+    suspend fun showProjectNotOpenedWindow(): Project = suspendCoroutine {
+        runInEdt {
+            val openProjectPanel = SelectProjectPanel(it)
 
-        val builder = JBPopupFactory.getInstance().createComponentPopupBuilder(openProjectPanel, openProjectPanel)
-        val popup = builder
-                .setTitle("SL Open Project")
-                .setMovable(true)
-                .setResizable(true)
-                .setRequestFocus(true)
-                .createPopup()
-        popup.show(RelativePoint(Point(300, 300)))
+            val builder = JBPopupFactory.getInstance().createComponentPopupBuilder(openProjectPanel, openProjectPanel)
+            val popup = builder
+                    .setTitle("SL Open Project")
+                    .setMovable(true)
+                    .setResizable(true)
+                    .setRequestFocus(true)
+                    .createPopup()
+            popup.show(RelativePoint(Point(300, 300)))
 
-        openProjectPanel.cancelButton.addActionListener {
-            popup.cancel()
+            openProjectPanel.cancelButton.addActionListener {
+                popup.cancel()
+            }
         }
     }
 

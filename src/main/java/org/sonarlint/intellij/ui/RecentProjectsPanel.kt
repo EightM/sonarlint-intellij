@@ -49,7 +49,6 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import com.intellij.util.ui.accessibility.AccessibleContextUtil
 import org.jetbrains.annotations.ApiStatus.ScheduledForRemoval
-import org.jetbrains.concurrency.AsyncPromise
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
@@ -83,11 +82,12 @@ import javax.swing.ListSelectionModel
 import javax.swing.ScrollPaneConstants
 import javax.swing.SwingConstants
 import javax.swing.border.LineBorder
+import kotlin.coroutines.Continuation
 import kotlin.math.max
 
 open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
 
-    lateinit var projectPromise: AsyncPromise<Project>
+    lateinit var projectContinuation: Continuation<Project>
     protected val myList: JBList<AnAction>
     private val myPathShortener: UniqueNameBuilder<ReopenProjectAction>
     protected var projectsWithLongPaths: Set<ReopenProjectAction> = HashSet()
@@ -102,7 +102,7 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
         ActionUtil.performActionDumbAwareWithCallbacks(selection, actionEvent, actionEvent.dataContext)
 
         // TODO project is nullable, need to handle this case
-        actionEvent.project?.let { projectPromise.setResult(it) }
+        actionEvent.project?.let { projectContinuation.resumeWith(Result.success(it)) }
         return selection
     }
 
