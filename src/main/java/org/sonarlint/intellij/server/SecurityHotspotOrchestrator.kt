@@ -19,12 +19,9 @@
  */
 package org.sonarlint.intellij.server
 
-import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.Messages
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.suspendCancellableCoroutine
 import org.sonarlint.intellij.config.Settings.getGlobalSettings
 import org.sonarlint.intellij.config.Settings.getSettingsFor
 import org.sonarlint.intellij.config.global.SonarQubeServer
@@ -35,73 +32,64 @@ import org.sonarlint.intellij.util.SonarLintUtils
 import org.sonarsource.sonarlint.core.WsHelperImpl
 import org.sonarsource.sonarlint.core.client.api.connected.GetSecurityHotspotRequestParams
 import org.sonarsource.sonarlint.core.client.api.connected.RemoteHotspot
-import kotlin.coroutines.suspendCoroutine
 
 open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener = SecurityHotspotOpener()) {
 
-    open suspend fun open(projectKey: String, hotspotKey: String, serverUrl: String) {
+    open fun open(projectKey: String, hotspotKey: String, serverUrl: String) {
         val connection = getOrCreateConnectionTo(serverUrl) ?: return
         val project = getOrBindTargetProject(projectKey, connection) ?: return
         val remoteHotspot = fetchHotspot(connection, hotspotKey, projectKey) ?: return //TODO show balloon
         opener.open(project, remoteHotspot)
     }
 
-    private suspend fun createConnectionTo(serverUrl: String): SonarQubeServer? = suspendCancellableCoroutine {
-        runInEdt {
-            val message = "There is no connection configured to $serverUrl."
-            val result = Notifier.showYesNoModalWindow(message, "Create connection")
-            if (result == Messages.OK) {
-                val server = NewConnectionWizard().open(serverUrl)
-                it.resumeWith(Result.success(server))
-            } else {
-                it.cancel()
-            }
+    private fun createConnectionTo(serverUrl: String): SonarQubeServer? {
+        val message = "There is no connection configured to $serverUrl."
+        val result = Notifier.showYesNoModalWindow(message, "Create connection")
+        if (result == Messages.OK) {
+            return NewConnectionWizard().open(serverUrl)
         }
+        return null
     }
 
-    private suspend fun getOrBindTargetProject(projectKey: String, connection: SonarQubeServer): Project? {
+    private fun getOrBindTargetProject(projectKey: String, connection: SonarQubeServer): Project? {
         return getTargetProjectAmongOpened(projectKey, connection) ?: selectAndBindTargetProject(projectKey, connection)
     }
 
-    private suspend fun selectAndBindTargetProject(projectKey: String, connection: SonarQubeServer): Project? {
+    private fun selectAndBindTargetProject(projectKey: String, connection: SonarQubeServer): Project? {
         val selectedProject = selectProject(projectKey, connection.hostUrl) ?: return null
         if (!getSettingsFor(selectedProject).isBoundTo(projectKey, connection)) {
-            val result = bindProject(selectedProject, projectKey, connection)
-            if (result == Messages.CANCEL) {
+            val bound = bindProject(selectedProject, projectKey, connection)
+            if (!bound) {
                 return null
             }
         }
         return selectedProject
     }
 
-    private suspend fun selectProject(projectKey: String, hostUrl: String): Project? {
+    private fun selectProject(projectKey: String, hostUrl: String): Project? {
         return if (shouldSelectProject(projectKey, hostUrl)) Notifier.showProjectNotOpenedWindow() else null
     }
 
-    private suspend fun shouldSelectProject(projectKey: String, hostUrl: String): Boolean = suspendCoroutine { continuation ->
-        runInEdt {
-            val message = "Cannot automatically find a project bound to:\n" +
-                    "  * Project: $projectKey\n" +
-                    "  * Server: $hostUrl\n" +
-                    "Please manually select a project."
-            val result = Notifier.showYesNoModalWindow(message, "Select project")
-            continuation.resumeWith(Result.success(result == Messages.OK))
-        }
+    private fun shouldSelectProject(projectKey: String, hostUrl: String): Boolean {
+        val message = "Cannot automatically find a project bound to:\n" +
+                "  * Project: $projectKey\n" +
+                "  * Server: $hostUrl\n" +
+                "Please manually select a project."
+        val result = Notifier.showYesNoModalWindow(message, "Select project")
+        return result == Messages.OK
     }
 
-    fun getTargetProjectAmongOpened(projectKey: String, connection: SonarQubeServer): Project? {
+    private fun getTargetProjectAmongOpened(projectKey: String, connection: SonarQubeServer): Project? {
         return ProjectManager.getInstance().openProjects
                 .find { getSettingsFor(it).isBoundTo(projectKey, connection) }
     }
 
-    private suspend fun bindProject(project: Project, projectKey: String, connection: SonarQubeServer): Int = suspendCoroutine {
-        runInEdt {
-            val result = Notifier.showYesNoModalWindow("You are going to bind current project to ${connection.hostUrl}. Do you agree?", "Yes")
-            if (result == Messages.OK) {
-                getSettingsFor(project).bindTo(connection, projectKey)
-            }
-            it.resumeWith(Result.success(result))
+    private fun bindProject(project: Project, projectKey: String, connection: SonarQubeServer): Boolean {
+        val result = Notifier.showYesNoModalWindow("You are going to bind current project to ${connection.hostUrl}. Do you agree?", "Yes")
+        if (result == Messages.OK) {
+            getSettingsFor(project).bindTo(connection, projectKey)
         }
+        return result == Messages.OK
     }
 
     private fun fetchHotspot(connection: SonarQubeServer, hotspotKey: String, projectKey: String): RemoteHotspot? {
@@ -109,7 +97,7 @@ open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener
         return optionalRemoteHotspot.orElse(null)
     }
 
-    private suspend fun getOrCreateConnectionTo(serverUrl: String): SonarQubeServer? {
+    private fun getOrCreateConnectionTo(serverUrl: String): SonarQubeServer? {
         val connectionsToServer = getGlobalSettings().getAllConnectionsTo(serverUrl)
         // we pick the first connection but this could lead to issues later if there are several matches
         return connectionsToServer.getOrElse(0) { createConnectionTo(serverUrl) }
@@ -122,16 +110,10 @@ object Notifier {
         return Messages.showYesNoDialog(null, message, "Couldn't open security hotspot", yesText, "Cancel", Messages.getWarningIcon())
     }
 
-    suspend fun showProjectNotOpenedWindow(): Project? = suspendCancellableCoroutine { continuation ->
-        runInEdt {
-            val wrapper = ProjectSelectionDialog()
-            wrapper.show()
-            if (wrapper.selectedProject == null) {
-                continuation.cancel()
-            } else {
-                continuation.resumeWith(Result.success(wrapper.selectedProject))
-            }
-        }
+    fun showProjectNotOpenedWindow(): Project? {
+        val wrapper = ProjectSelectionDialog()
+        wrapper.show()
+        return wrapper.selectedProject
     }
 
 }

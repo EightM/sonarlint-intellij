@@ -19,7 +19,6 @@
  */
 package org.sonarlint.intellij.issue.hotspot
 
-import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import org.sonarlint.intellij.actions.IssuesViewTabOpener
@@ -31,15 +30,13 @@ import org.sonarsource.sonarlint.core.client.api.connected.RemoteHotspot
 
 open class SecurityHotspotOpener {
 
-    open suspend fun open(project: Project, remoteHotspot: RemoteHotspot) {
+    open fun open(project: Project, remoteHotspot: RemoteHotspot) {
         try {
-            runInEdt {
-                val localHotspot = SecurityHotspotMatcher(project).match(remoteHotspot)
-                open(project, localHotspot.primaryLocation)
-                val highlighter = getService(project, SonarLintHighlighting::class.java)
-                highlighter.highlight(localHotspot)
-                getService(project, IssuesViewTabOpener::class.java).show(localHotspot) { highlighter.removeHighlights() }
-            }
+            val localHotspot = SecurityHotspotMatcher(project).match(remoteHotspot)
+            open(project, localHotspot.primaryLocation)
+            val highlighter = getService(project, SonarLintHighlighting::class.java)
+            highlighter.highlight(localHotspot)
+            getService(project, IssuesViewTabOpener::class.java).show(localHotspot) { highlighter.removeHighlights() }
         } catch (e: NoMatchException) {
             // TODO display balloon
         }

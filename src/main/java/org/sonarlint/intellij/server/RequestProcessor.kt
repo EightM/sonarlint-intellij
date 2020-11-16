@@ -73,7 +73,7 @@ class RequestProcessor(private val appInfo: ApplicationInfo = ApplicationInfo.ge
         val hotspotKey = request.getParameter(HOTSPOT_KEY) ?: return missingParameter(HOTSPOT_KEY)
         val serverUrl = request.getParameter(SERVER_URL) ?: return missingParameter(SERVER_URL)
 
-        GlobalScope.launch {
+        ApplicationManager.getApplication().invokeLater {
             orchestrator.open(projectKey, hotspotKey, serverUrl)
         }
         return Success()
