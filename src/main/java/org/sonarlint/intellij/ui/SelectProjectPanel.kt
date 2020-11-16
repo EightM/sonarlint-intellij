@@ -9,29 +9,28 @@ import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.fileChooser.impl.FileChooserUtil
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.Messages
-import com.intellij.openapi.vcs.ProjectLevelVcsManager
+import com.intellij.openapi.ui.VerticalFlowLayout
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.PlatformProjectOpenProcessor
 import com.intellij.projectImport.ProjectAttachProcessor
-import com.intellij.util.ui.cloneDialog.VcsCloneDialog
 import java.nio.file.Paths
 import javax.swing.JButton
 import javax.swing.JPanel
+import javax.swing.JSeparator
+import javax.swing.SwingConstants
 
 
 class SelectProjectPanel(private val onProjectSelected: (Project) -> Unit) : JPanel() {
 
-    private val recentProjectPanel = SonarLintRecentProjectPanel(onProjectSelected)
-    private val openProjectButton = JButton("Open Project")
-    private val newProjectFromVcsButton = JButton("New Project from VCS...")
-
     init {
-        add(recentProjectPanel)
+        val openProjectButton = JButton("Open project from file system")
+
+        layout = VerticalFlowLayout()
         add(openProjectButton)
-        add(newProjectFromVcsButton)
+        add(JSeparator(SwingConstants.HORIZONTAL))
+        add(SonarLintRecentProjectPanel(onProjectSelected))
 
         openProjectButton.addActionListener {
             val descriptor: FileChooserDescriptor = OpenProjectFileChooserDescriptor(false)
@@ -47,14 +46,6 @@ class SelectProjectPanel(private val onProjectSelected: (Project) -> Unit) : JPa
             }
         }
 
-        newProjectFromVcsButton.addActionListener {
-            val project = ProjectManager.getInstance().defaultProject
-            val cloneDialog = VcsCloneDialog.Builder(project).forExtension()
-            if (cloneDialog.showAndGet()) {
-                cloneDialog.doClone(ProjectLevelVcsManager.getInstance(project).compositeCheckoutListener)
-            }
-            // XXX not implemented
-        }
     }
 
 }

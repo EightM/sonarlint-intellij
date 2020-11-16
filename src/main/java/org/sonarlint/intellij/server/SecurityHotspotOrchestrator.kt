@@ -23,6 +23,7 @@ import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.Messages
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.sonarlint.intellij.config.Settings.getGlobalSettings
 import org.sonarlint.intellij.config.Settings.getSettingsFor
@@ -93,7 +94,7 @@ open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener
                 .find { getSettingsFor(it).isBoundTo(projectKey, connection) }
     }
 
-    suspend fun bindProject(project: Project, projectKey: String, connection: SonarQubeServer): Int = suspendCoroutine {
+    private suspend fun bindProject(project: Project, projectKey: String, connection: SonarQubeServer): Int = suspendCoroutine {
         runInEdt {
             val result = Notifier.showYesNoModalWindow("You are going to bind current project to ${connection.hostUrl}. Do you agree?", "Yes")
             if (result == Messages.OK) {

@@ -108,10 +108,8 @@ open class SonarLintRecentProjectPanel(private val onProjectSelected: (Project) 
         return myChecker == null || myChecker!!.isValid(path)
     }
 
-    protected open val isUseGroups: Boolean
-        get() = false
     private val preferredScrollableViewportSize: Dimension
-        get() = JBUI.size(250, 400)
+        get() = JBUI.size(350, 250)
 
     protected fun addMouseMotionListener() {
         val mouseAdapter: MouseAdapter = object : MouseAdapter() {
@@ -484,7 +482,7 @@ open class SonarLintRecentProjectPanel(private val onProjectSelected: (Project) 
     }
 
     init {
-        val recentProjectActions = RecentProjectListActionProvider.getInstance().getActions(false, isUseGroups)
+        val recentProjectActions = RecentProjectListActionProvider.getInstance().getActions()
         myPathShortener = UniqueNameBuilder(SystemProperties.getUserHome(), File.separator, 40)
         val pathsToCheck: MutableCollection<String> = HashSet()
         for (action in recentProjectActions) {
