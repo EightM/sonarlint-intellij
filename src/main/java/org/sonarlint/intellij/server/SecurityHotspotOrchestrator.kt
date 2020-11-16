@@ -30,6 +30,10 @@ import org.sonarlint.intellij.config.global.SonarQubeServer
 import org.sonarlint.intellij.config.global.wizard.NewConnectionWizard
 import org.sonarlint.intellij.issue.hotspot.SecurityHotspotOpener
 import org.sonarlint.intellij.ui.ProjectSelectionDialog
+import org.sonarlint.intellij.util.SonarLintUtils
+import org.sonarsource.sonarlint.core.WsHelperImpl
+import org.sonarsource.sonarlint.core.client.api.connected.GetSecurityHotspotRequestParams
+import org.sonarsource.sonarlint.core.client.api.connected.RemoteHotspot
 import kotlin.coroutines.suspendCoroutine
 
 open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener = SecurityHotspotOpener()) {
@@ -37,13 +41,8 @@ open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener
     open suspend fun open(projectKey: String, hotspotKey: String, serverUrl: String) {
         val connection = getOrCreateConnectionTo(serverUrl) ?: return
         val project = getOrBindTargetProject(projectKey, connection) ?: return
-        opener.open(hotspotKey, project)
-    }
-
-    private suspend fun getOrCreateConnectionTo(serverUrl: String): SonarQubeServer? {
-        val connectionsToServer = getGlobalSettings().getAllConnectionsTo(serverUrl)
-        // we pick the first connection but this could lead to issues later if there are several matches
-        return connectionsToServer.getOrElse(0) { createConnectionTo(serverUrl) }
+        val remoteHotspot = fetchHotspot(connection, hotspotKey, projectKey) ?: return //TODO show balloon
+        opener.open(project, remoteHotspot)
     }
 
     private suspend fun createConnectionTo(serverUrl: String): SonarQubeServer? = suspendCancellableCoroutine {
@@ -75,10 +74,7 @@ open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener
     }
 
     private suspend fun selectProject(projectKey: String, hostUrl: String): Project? {
-        if (shouldSelectProject(projectKey, hostUrl)) {
-            return Notifier.showProjectNotOpenedWindow()
-        }
-        return null
+        return if (shouldSelectProject(projectKey, hostUrl)) Notifier.showProjectNotOpenedWindow() else null
     }
 
     private suspend fun shouldSelectProject(projectKey: String, hostUrl: String): Boolean = suspendCoroutine { continuation ->
@@ -105,6 +101,17 @@ open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener
             }
             it.resumeWith(Result.success(result))
         }
+    }
+
+    private fun fetchHotspot(connection: SonarQubeServer, hotspotKey: String, projectKey: String): RemoteHotspot? {
+        val optionalRemoteHotspot = WsHelperImpl().getHotspot(SonarLintUtils.getServerConfiguration(connection), GetSecurityHotspotRequestParams(hotspotKey, projectKey))
+        return optionalRemoteHotspot.orElse(null)
+    }
+
+    private suspend fun getOrCreateConnectionTo(serverUrl: String): SonarQubeServer? {
+        val connectionsToServer = getGlobalSettings().getAllConnectionsTo(serverUrl)
+        // we pick the first connection but this could lead to issues later if there are several matches
+        return connectionsToServer.getOrElse(0) { createConnectionTo(serverUrl) }
     }
 }
 

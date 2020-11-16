@@ -22,43 +22,16 @@ package org.sonarlint.intellij.issue.hotspot
 import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.ProjectManager
 import org.sonarlint.intellij.actions.IssuesViewTabOpener
-import org.sonarlint.intellij.config.Settings
-import org.sonarlint.intellij.core.ProjectBindingManager
 import org.sonarlint.intellij.core.SecurityHotspotMatcher
 import org.sonarlint.intellij.editor.SonarLintHighlighting
-import org.sonarlint.intellij.exception.InvalidBindingException
 import org.sonarlint.intellij.issue.IssueMatcher.NoMatchException
-import org.sonarlint.intellij.util.SonarLintUtils
 import org.sonarlint.intellij.util.SonarLintUtils.getService
-import org.sonarsource.sonarlint.core.WsHelperImpl
-import org.sonarsource.sonarlint.core.client.api.connected.GetSecurityHotspotRequestParams
-import org.sonarsource.sonarlint.core.client.api.connected.ServerConfiguration
-import org.sonarsource.sonarlint.core.client.api.connected.WsHelper
-import java.util.*
-import kotlin.coroutines.suspendCoroutine
+import org.sonarsource.sonarlint.core.client.api.connected.RemoteHotspot
 
-enum class SecurityHotspotOpeningResult {
-    NO_MATCHING_CONNECTION,
-    PROJECT_NOT_FOUND,
-    HOTSPOT_DETAILS_NOT_FOUND,
-    LOCATION_NOT_MATCHING,
-    SUCCESS
-}
+open class SecurityHotspotOpener {
 
-open class SecurityHotspotOpener(private val wsHelper: WsHelper, private val projectManager: ProjectManager) {
-
-    constructor() : this(WsHelperImpl(), ProjectManager.getInstance())
-
-    open suspend fun open(hotspotKey: String, project: Project): SecurityHotspotOpeningResult = suspendCoroutine {
-        val projectSettings = Settings.getSettingsFor(project)
-
-        val optionalRemoteHotspot = wsHelper.getHotspot(getConnectedServerConfig(project), GetSecurityHotspotRequestParams(hotspotKey, projectSettings.projectKey))
-        if (!optionalRemoteHotspot.isPresent) {
-            it.resumeWith(Result.success(SecurityHotspotOpeningResult.HOTSPOT_DETAILS_NOT_FOUND))
-        }
-        val remoteHotspot = optionalRemoteHotspot.get()
+    open suspend fun open(project: Project, remoteHotspot: RemoteHotspot) {
         try {
             runInEdt {
                 val localHotspot = SecurityHotspotMatcher(project).match(remoteHotspot)
@@ -68,16 +41,8 @@ open class SecurityHotspotOpener(private val wsHelper: WsHelper, private val pro
                 getService(project, IssuesViewTabOpener::class.java).show(localHotspot) { highlighter.removeHighlights() }
             }
         } catch (e: NoMatchException) {
-            it.resumeWith(Result.success(SecurityHotspotOpeningResult.LOCATION_NOT_MATCHING))
+            // TODO display balloon
         }
-        it.resumeWith(Result.success(SecurityHotspotOpeningResult.SUCCESS))
-    }
-
-    @Throws(InvalidBindingException::class)
-    private fun getConnectedServerConfig(project: Project): ServerConfiguration {
-        val bindingManager = getService(project, ProjectBindingManager::class.java)
-        val server = bindingManager.sonarQubeServer
-        return SonarLintUtils.getServerConfiguration(server)
     }
 
     companion object {
