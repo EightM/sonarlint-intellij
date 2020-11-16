@@ -38,12 +38,10 @@ import kotlin.coroutines.suspendCoroutine
 
 open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener = SecurityHotspotOpener()) {
 
-    open fun open(projectKey: String, hotspotKey: String, serverUrl: String) {
-        GlobalScope.launch {
-            val connection = getOrCreateConnectionTo(serverUrl) ?: return@launch
-            val project = getOrBindTargetProject(projectKey, connection)
-            opener.open(hotspotKey, project)
-        }
+    open suspend fun open(projectKey: String, hotspotKey: String, serverUrl: String) {
+        val connection = getOrCreateConnectionTo(serverUrl) ?: return
+        val project = getOrBindTargetProject(projectKey, connection)
+        opener.open(hotspotKey, project)
     }
 
     private suspend fun getOrBindTargetProject(projectKey: String, connection: SonarQubeServer): Project = suspendCoroutine { continuation ->
@@ -65,7 +63,7 @@ open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener
 
     fun getTargetProjectAmongOpened(projectKey: String, connection: SonarQubeServer): Project? {
         return ProjectManager.getInstance().openProjects
-                .find {getSettingsFor(it).isBoundTo(projectKey, connection)}
+                .find { getSettingsFor(it).isBoundTo(projectKey, connection) }
     }
 
     private suspend fun getOrCreateConnectionTo(serverUrl: String): SonarQubeServer? = suspendCoroutine {

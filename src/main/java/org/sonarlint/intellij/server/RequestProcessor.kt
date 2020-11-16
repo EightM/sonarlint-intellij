@@ -26,6 +26,8 @@ import com.intellij.openapi.application.ApplicationNamesInfo
 import com.intellij.openapi.project.ProjectManager
 import io.netty.handler.codec.http.HttpMethod
 import io.netty.handler.codec.http.QueryStringDecoder
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 
 const val STATUS_ENDPOINT = "/sonarlint/api/status"
 const val SHOW_HOTSPOT_ENDPOINT = "/sonarlint/api/hotspots/show"
@@ -71,7 +73,7 @@ class RequestProcessor(private val appInfo: ApplicationInfo = ApplicationInfo.ge
         val hotspotKey = request.getParameter(HOTSPOT_KEY) ?: return missingParameter(HOTSPOT_KEY)
         val serverUrl = request.getParameter(SERVER_URL) ?: return missingParameter(SERVER_URL)
 
-        ApplicationManager.getApplication().invokeLater {
+        GlobalScope.launch {
             orchestrator.open(projectKey, hotspotKey, serverUrl)
         }
         return Success()
