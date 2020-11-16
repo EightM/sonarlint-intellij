@@ -23,16 +23,13 @@ import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.Messages
-import com.intellij.openapi.ui.popup.JBPopupFactory
-import com.intellij.ui.awt.RelativePoint
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.sonarlint.intellij.config.Settings.getGlobalSettings
 import org.sonarlint.intellij.config.Settings.getSettingsFor
 import org.sonarlint.intellij.config.global.SonarQubeServer
 import org.sonarlint.intellij.config.global.wizard.NewConnectionWizard
 import org.sonarlint.intellij.issue.hotspot.SecurityHotspotOpener
-import org.sonarlint.intellij.ui.SelectProjectPanel
-import java.awt.Point
+import org.sonarlint.intellij.ui.ProjectSelectionDialog
 import kotlin.coroutines.suspendCoroutine
 
 open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener = SecurityHotspotOpener()) {
@@ -67,7 +64,7 @@ open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener
     }
 
     private suspend fun selectAndBindTargetProject(projectKey: String, connection: SonarQubeServer): Project? {
-        val selectedProject = Notifier.showProjectNotOpenedWindow()
+        val selectedProject = selectProject(projectKey, connection.hostUrl) ?: return null
         if (!getSettingsFor(selectedProject).isBoundTo(projectKey, connection)) {
             val result = bindProject(selectedProject, projectKey, connection)
             if (result == Messages.CANCEL) {
@@ -75,6 +72,24 @@ open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener
             }
         }
         return selectedProject
+    }
+
+    private suspend fun selectProject(projectKey: String, hostUrl: String): Project? {
+        if (shouldSelectProject(projectKey, hostUrl)) {
+            return Notifier.showProjectNotOpenedWindow()
+        }
+        return null
+    }
+
+    private suspend fun shouldSelectProject(projectKey: String, hostUrl: String): Boolean = suspendCoroutine { continuation ->
+        runInEdt {
+            val message = "Cannot automatically find a project bound to:\n" +
+                    "  * Project: $projectKey\n" +
+                    "  * Server: $hostUrl\n" +
+                    "Please manually select a project."
+            val result = Notifier.showYesNoModalWindow(message, "Select project")
+            continuation.resumeWith(Result.success(result == Messages.OK))
+        }
     }
 
     fun getTargetProjectAmongOpened(projectKey: String, connection: SonarQubeServer): Project? {
@@ -99,22 +114,14 @@ object Notifier {
         return Messages.showYesNoDialog(null, message, "Couldn't open security hotspot", yesText, "Cancel", Messages.getWarningIcon())
     }
 
-    suspend fun showProjectNotOpenedWindow(): Project = suspendCancellableCoroutine { continuation ->
+    suspend fun showProjectNotOpenedWindow(): Project? = suspendCancellableCoroutine { continuation ->
         runInEdt {
-            val openProjectPanel = SelectProjectPanel { continuation.resumeWith(Result.success(it)) }
-
-            val builder = JBPopupFactory.getInstance().createComponentPopupBuilder(openProjectPanel, openProjectPanel)
-            val popup = builder
-                    .setTitle("SL Open Project")
-                    .setMovable(true)
-                    .setResizable(true)
-                    .setRequestFocus(true)
-                    .createPopup()
-            popup.show(RelativePoint(Point(300, 300)))
-
-            openProjectPanel.cancelButton.addActionListener {
+            val wrapper = ProjectSelectionDialog()
+            wrapper.show()
+            if (wrapper.selectedProject == null) {
                 continuation.cancel()
-                popup.cancel()
+            } else {
+                continuation.resumeWith(Result.success(wrapper.selectedProject))
             }
         }
     }

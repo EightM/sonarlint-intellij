@@ -28,13 +28,11 @@ class SelectProjectPanel(private val onProjectSelected: (Project) -> Unit) : JPa
     private val recentProjectPanel = SonarLintRecentProjectPanel(onProjectSelected)
     private val openProjectButton = JButton("Open Project")
     private val newProjectFromVcsButton = JButton("New Project from VCS...")
-    val cancelButton = JButton("Cancel")
 
     init {
         add(recentProjectPanel)
         add(openProjectButton)
         add(newProjectFromVcsButton)
-        add(cancelButton)
 
         openProjectButton.addActionListener {
             val descriptor: FileChooserDescriptor = OpenProjectFileChooserDescriptor(false)
