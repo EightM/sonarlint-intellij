@@ -82,12 +82,10 @@ import javax.swing.ListSelectionModel
 import javax.swing.ScrollPaneConstants
 import javax.swing.SwingConstants
 import javax.swing.border.LineBorder
-import kotlin.coroutines.Continuation
 import kotlin.math.max
 
-open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
+open class SonarLintRecentProjectPanel(private val onProjectSelected: (Project) -> Unit) : JPanel(BorderLayout()) {
 
-    lateinit var projectContinuation: Continuation<Project>
     protected val myList: JBList<AnAction>
     private val myPathShortener: UniqueNameBuilder<ReopenProjectAction>
     protected var projectsWithLongPaths: Set<ReopenProjectAction> = HashSet()
@@ -102,7 +100,7 @@ open class SonarLintRecentProjectPanel : JPanel(BorderLayout()) {
         ActionUtil.performActionDumbAwareWithCallbacks(selection, actionEvent, actionEvent.dataContext)
 
         // TODO project is nullable, need to handle this case
-        actionEvent.project?.let { projectContinuation.resumeWith(Result.success(it)) }
+        actionEvent.project?.let { onProjectSelected(it) }
         return selection
     }
 

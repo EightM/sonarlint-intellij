@@ -21,12 +21,11 @@ import com.intellij.util.ui.cloneDialog.VcsCloneDialog
 import java.nio.file.Paths
 import javax.swing.JButton
 import javax.swing.JPanel
-import kotlin.coroutines.Continuation
 
 
-class SelectProjectPanel(private val projectContinuation: Continuation<Project>) : JPanel(), Disposable {
+class SelectProjectPanel(private val onProjectSelected: (Project) -> Unit) : JPanel() {
 
-    private val recentProjectPanel = SonarLintRecentProjectPanel()
+    private val recentProjectPanel = SonarLintRecentProjectPanel(onProjectSelected)
     private val openProjectButton = JButton("Open Project")
     private val newProjectFromVcsButton = JButton("New Project from VCS...")
     val cancelButton = JButton("Cancel")
@@ -36,8 +35,6 @@ class SelectProjectPanel(private val projectContinuation: Continuation<Project>)
         add(openProjectButton)
         add(newProjectFromVcsButton)
         add(cancelButton)
-
-        recentProjectPanel.projectContinuation = projectContinuation
 
         openProjectButton.addActionListener {
             val descriptor: FileChooserDescriptor = OpenProjectFileChooserDescriptor(false)
@@ -49,7 +46,7 @@ class SelectProjectPanel(private val projectContinuation: Continuation<Project>)
                     return@chooseFile
                 }
                 val project = doOpenFile(file) ?: return@chooseFile
-                projectContinuation.resumeWith(Result.success(project))
+                onProjectSelected(project)
             }
         }
 
@@ -59,19 +56,8 @@ class SelectProjectPanel(private val projectContinuation: Continuation<Project>)
             if (cloneDialog.showAndGet()) {
                 cloneDialog.doClone(ProjectLevelVcsManager.getInstance(project).compositeCheckoutListener)
             }
+            // XXX not implemented
         }
-
-    }
-
-    fun getProject(): Project {
-        val openProjects = ProjectManager.getInstance().openProjects
-        return if (openProjects.isNotEmpty()) openProjects[0]
-        else ProjectManager.getInstance().defaultProject
-
-    }
-
-    override fun dispose() {
-
     }
 
 }
