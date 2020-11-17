@@ -43,7 +43,7 @@ open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener
     }
 
     private fun createConnectionTo(serverUrl: String): SonarQubeServer? {
-        val message = "There is no connection configured to $serverUrl."
+        val message = "No connections configured to $serverUrl."
         val result = Notifier.showYesNoModalWindow(message, "Create connection")
         if (result == Messages.OK) {
             return NewConnectionWizard().open(serverUrl)
@@ -107,7 +107,7 @@ open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener
 object Notifier {
 
     fun showYesNoModalWindow(message: String, yesText: String): Int {
-        return Messages.showYesNoDialog(null, message, "Couldn't open security hotspot", yesText, "Cancel", Messages.getWarningIcon())
+        return Messages.showYesNoDialog(null, message, "Opening Security Hotspot...", yesText, "Cancel", Messages.getWarningIcon())
     }
 
     fun showProjectNotOpenedWindow(): Project? {
