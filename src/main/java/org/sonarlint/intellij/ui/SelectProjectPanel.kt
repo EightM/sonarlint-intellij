@@ -17,19 +17,18 @@ import com.intellij.platform.PlatformProjectOpenProcessor
 import com.intellij.projectImport.ProjectAttachProcessor
 import java.nio.file.Paths
 import javax.swing.JButton
+import javax.swing.JLabel
 import javax.swing.JPanel
-import javax.swing.JSeparator
-import javax.swing.SwingConstants
 
 
 class SelectProjectPanel(private val onProjectSelected: (Project) -> Unit) : JPanel() {
 
     init {
-        val openProjectButton = JButton("Open project from file system")
+        val openProjectButton = JButton("Open or import")
 
-        layout = VerticalFlowLayout()
+        layout = VerticalFlowLayout(VerticalFlowLayout.TOP, 5, 15, false, false)
         add(openProjectButton)
-        add(JSeparator(SwingConstants.HORIZONTAL))
+        add(JLabel("or"))
         add(SonarLintRecentProjectPanel(onProjectSelected))
 
         openProjectButton.addActionListener {
