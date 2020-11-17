@@ -72,8 +72,8 @@ open class SecurityHotspotOrchestrator(private val opener: SecurityHotspotOpener
 
     private fun shouldSelectProject(projectKey: String, hostUrl: String): Boolean {
         val message = "Cannot automatically find a project bound to:\n" +
-                "  * Project: $projectKey\n" +
-                "  * Server: $hostUrl\n" +
+                "  • Project: $projectKey\n" +
+                "  • Server: $hostUrl\n" +
                 "Please manually select a project."
         val result = Notifier.showYesNoModalWindow(message, "Select project")
         return result == Messages.OK
