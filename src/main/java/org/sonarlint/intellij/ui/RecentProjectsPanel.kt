@@ -23,6 +23,7 @@ import com.intellij.openapi.application.ApplicationActivationListener
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.VerticalFlowLayout
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.io.FileUtil
@@ -99,8 +100,8 @@ open class SonarLintRecentProjectPanel(private val onProjectSelected: (Project) 
                         DataManager.getInstance().getDataContext(myList), false, false)
         ActionUtil.performActionDumbAwareWithCallbacks(selection, actionEvent, actionEvent.dataContext)
 
-        // TODO project is nullable, need to handle this case
-        actionEvent.project?.let { onProjectSelected(it) }
+        val openedProject = ProjectManager.getInstance().openProjects.firstOrNull { it.basePath == (selection as ReopenProjectAction).projectPath }
+        openedProject?.let { onProjectSelected(it) }
         return selection
     }
 
